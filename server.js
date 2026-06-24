@@ -513,7 +513,12 @@ const ensureSeedData = async () => {
 
 let bootPromise = null;
 const ensureBackendReady = () => {
-  if (!bootPromise) bootPromise = ensureSeedData();
+  if (!bootPromise) {
+    bootPromise = ensureSeedData().catch((error) => {
+      bootPromise = null;
+      throw error;
+    });
+  }
   return bootPromise;
 };
 
