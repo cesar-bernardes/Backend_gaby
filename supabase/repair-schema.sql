@@ -15,6 +15,7 @@ $$;
 
 alter table "Studio".services add column if not exists description text not null default '';
 alter table "Studio".services add column if not exists category text not null default 'moment';
+alter table "Studio".services add column if not exists image_url text not null default '';
 
 update "Studio".studio_settings
 set policy = jsonb_build_object(

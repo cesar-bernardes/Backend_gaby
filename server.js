@@ -46,7 +46,7 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use(cookieParser());
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
@@ -155,6 +155,7 @@ const toCents = (value) => {
   const number = Number(normalized);
   return Number.isFinite(number) ? Math.round(number * 100) : null;
 };
+const normalizeImageUrl = (value = '') => String(value || '').trim();
 
 const formatPrice = (cents = 0) => (Number(cents || 0) / 100).toFixed(2);
 
@@ -214,6 +215,8 @@ const mapService = (row) => row && ({
   nome: row.name,
   description: row.description || '',
   descricao: row.description || '',
+  imageUrl: row.image_url || '',
+  foto: row.image_url || '',
   priceCents: row.price_cents,
   preco: Number(row.price_cents || 0) / 100,
   durationMinutes: row.duration_minutes,
@@ -448,7 +451,7 @@ const ensureSchemaReady = async () => {
   const checks = [
     db().from('studio_settings').select('id').limit(1),
     db().from('app_users').select('id,role').limit(1),
-    db().from('services').select('id,description,category,duration_minutes').limit(1),
+    db().from('services').select('id,description,category,duration_minutes,image_url').limit(1),
     db().from('availability_blocks').select('id,date,start_time,end_time,full_day,recurrence,weekday,reason').limit(1),
     db().from('appointments').select('id,start_time,end_time,status').limit(1),
   ];
@@ -973,6 +976,7 @@ app.post('/api/services', authenticate, requireAdmin, asyncHandler(async (req, r
   const name = req.body.name || req.body.nome;
   const description = req.body.description || req.body.descricao || '';
   const category = req.body.category || req.body.categoria || 'moment';
+  const imageUrl = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
   const priceCents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
   const durationMinutes = Number(req.body.durationMinutes || req.body.duracaoMinutos);
 
@@ -988,6 +992,7 @@ app.post('/api/services', authenticate, requireAdmin, asyncHandler(async (req, r
       name,
       description,
       category,
+      image_url: imageUrl,
       price_cents: priceCents,
       duration_minutes: durationMinutes,
       sort_order: req.body.sortOrder ?? services.length + 1,
@@ -1008,6 +1013,9 @@ app.put('/api/services/:id', authenticate, requireAdmin, asyncHandler(async (req
   }
   if (req.body.category !== undefined || req.body.categoria !== undefined) {
     patch.category = req.body.category ?? req.body.categoria;
+  }
+  if (req.body.imageUrl !== undefined || req.body.image_url !== undefined || req.body.foto !== undefined) {
+    patch.image_url = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
   }
   if (req.body.priceCents !== undefined || req.body.price !== undefined || req.body.preco !== undefined) {
     patch.price_cents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
@@ -1071,6 +1079,7 @@ app.post('/api/admin/services', authenticate, requireAdmin, asyncHandler(async (
   const name = req.body.name || req.body.nome;
   const description = req.body.description || req.body.descricao || '';
   const category = req.body.category || req.body.categoria || 'moment';
+  const imageUrl = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
   const priceCents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
   const durationMinutes = Number(req.body.durationMinutes || req.body.duracaoMinutos);
 
@@ -1086,6 +1095,7 @@ app.post('/api/admin/services', authenticate, requireAdmin, asyncHandler(async (
       name,
       description,
       category,
+      image_url: imageUrl,
       price_cents: priceCents,
       duration_minutes: durationMinutes,
       sort_order: req.body.sortOrder ?? services.length + 1,
@@ -1103,6 +1113,9 @@ app.put('/api/admin/services/:id', authenticate, requireAdmin, asyncHandler(asyn
   if (req.body.name || req.body.nome) patch.name = req.body.name || req.body.nome;
   if (req.body.description !== undefined || req.body.descricao !== undefined) patch.description = req.body.description ?? req.body.descricao;
   if (req.body.category !== undefined || req.body.categoria !== undefined) patch.category = req.body.category ?? req.body.categoria;
+  if (req.body.imageUrl !== undefined || req.body.image_url !== undefined || req.body.foto !== undefined) {
+    patch.image_url = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  }
   if (req.body.priceCents !== undefined || req.body.price !== undefined || req.body.preco !== undefined) {
     patch.price_cents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
   }

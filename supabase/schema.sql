@@ -52,6 +52,7 @@ create table if not exists "Studio".services (
   id text primary key,
   name text not null,
   description text not null default '',
+  image_url text not null default '',
   price_cents integer not null check (price_cents >= 0),
   duration_minutes integer not null check (duration_minutes > 0),
   category text not null default 'moment',
@@ -113,6 +114,7 @@ create table if not exists "Studio".appointments (
 -- Fica antes dos indices/triggers para evitar erro quando a tabela ja existe sem colunas novas.
 alter table "Studio".services add column if not exists description text not null default '';
 alter table "Studio".services add column if not exists category text not null default 'moment';
+alter table "Studio".services add column if not exists image_url text not null default '';
 
 update "Studio".studio_settings
 set policy = jsonb_build_object(
