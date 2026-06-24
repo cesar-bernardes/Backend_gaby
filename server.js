@@ -54,6 +54,37 @@ app.options('*', cors(corsOptions));
 const now = () => new Date().toISOString();
 const makeId = (prefix) => `${prefix}_${randomUUID()}`;
 const onlyDigits = (value = '') => String(value).replace(/\D/g, '');
+const normalizePhone = (value = '') => {
+  let digits = onlyDigits(value);
+
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith('0') && (digits.length === 11 || digits.length === 12)) {
+    digits = digits.slice(1);
+  }
+
+  if (digits.length === 10 && /^[6-9]/.test(digits.slice(2, 3))) {
+    return `${digits.slice(0, 2)}9${digits.slice(2)}`;
+  }
+
+  return digits;
+};
+const phoneLookupVariants = (value = '') => {
+  const normalized = normalizePhone(value);
+  const variants = new Set([normalized, onlyDigits(value)]);
+
+  if (normalized.length === 11 && normalized[2] === '9') {
+    variants.add(`${normalized.slice(0, 2)}${normalized.slice(3)}`);
+  }
+
+  return [...variants].filter(Boolean);
+};
+const isValidPhone = (value = '') => {
+  const normalized = normalizePhone(value);
+  return normalized.length === 10 || normalized.length === 11;
+};
 const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 const isTime = (value) => /^\d{2}:\d{2}$/.test(String(value || ''));
 const normalizeRole = (role) => (role === 'ADMIN' || role === 'ADM' ? 'ADM' : 'CLIENT');
@@ -493,11 +524,19 @@ const getStudio = async () => {
   return mapStudio(row || defaultStudio());
 };
 
-const findUserByPhone = async (phone) => runQuery(db()
-  .from('app_users')
-  .select('*')
-  .eq('phone', onlyDigits(phone))
-  .maybeSingle());
+const findUserByPhone = async (phone) => {
+  const normalizedPhone = normalizePhone(phone);
+  const variants = phoneLookupVariants(phone);
+  if (!variants.length) return null;
+
+  const users = await runQuery(db()
+    .from('app_users')
+    .select('*')
+    .in('phone', variants)
+    .limit(10));
+
+  return users.find((user) => user.phone === normalizedPhone) || users[0] || null;
+};
 
 const findUserById = async (id) => runQuery(db()
   .from('app_users')
@@ -506,7 +545,7 @@ const findUserById = async (id) => runQuery(db()
   .maybeSingle());
 
 const upsertUser = async ({ phone, name, role = 'CLIENT' }) => {
-  const normalizedPhone = onlyDigits(phone);
+  const normalizedPhone = normalizePhone(phone);
   const existing = await findUserByPhone(normalizedPhone);
   const finalRole = normalizeRole(role);
 
@@ -528,6 +567,7 @@ const upsertUser = async ({ phone, name, role = 'CLIENT' }) => {
     .from('app_users')
     .update({
       name: name || existing.name,
+      phone: normalizedPhone,
       role: nextRole,
       updated_at: now(),
     })
@@ -597,7 +637,7 @@ const findAppointmentById = async (appointmentId) => runQuery(db()
 const canManageAppointment = (user, appointment) => (
   isAdminRole(user?.role)
   || appointment?.user_id === user?.id
-  || appointment?.client_phone === user?.phone
+  || phoneLookupVariants(user?.phone).includes(appointment?.client_phone)
 );
 
 const getSlotsForDate = async (date, serviceId = null, options = {}) => {
@@ -743,7 +783,7 @@ const sendAuthResponse = (res, user) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  return res.json({ success: true, user: publicUser(user) });
+  return res.json({ success: true, token, user: publicUser(user) });
 };
 
 app.use(asyncHandler(async (_req, _res, next) => {
@@ -794,9 +834,9 @@ app.get('/api/bootstrap', asyncHandler(async (_req, res) => {
 }));
 
 app.post('/api/auth/check-phone', asyncHandler(async (req, res) => {
-  const normalizedPhone = onlyDigits(req.body.phone);
+  const normalizedPhone = normalizePhone(req.body.phone);
 
-  if (normalizedPhone.length < 10) {
+  if (!isValidPhone(normalizedPhone)) {
     return res.status(400).json({ message: 'Informe um WhatsApp valido' });
   }
 
@@ -811,9 +851,9 @@ app.post('/api/auth/check-phone', asyncHandler(async (req, res) => {
 
 app.post('/api/login', asyncHandler(async (req, res) => {
   const { phone, role, adminCode } = req.body;
-  const normalizedPhone = onlyDigits(phone);
+  const normalizedPhone = normalizePhone(phone);
 
-  if (normalizedPhone.length < 10) {
+  if (!isValidPhone(normalizedPhone)) {
     return res.status(400).json({ message: 'Informe um WhatsApp valido' });
   }
 
@@ -825,14 +865,19 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     });
   }
 
-  const adminByPhone = process.env.ADMIN_PHONE && onlyDigits(process.env.ADMIN_PHONE) === normalizedPhone;
+  const adminByPhone = process.env.ADMIN_PHONE && normalizePhone(process.env.ADMIN_PHONE) === normalizedPhone;
   const adminByCode = process.env.ADMIN_CODE && adminCode === process.env.ADMIN_CODE;
   const requestedAdmin = isAdminRole(role);
   const finalRole = requestedAdmin && (adminByPhone || adminByCode) ? 'ADM' : normalizeRole(existingUser.role);
 
   const updatedUser = await runQuery(db()
     .from('app_users')
-    .update({ role: finalRole, last_login_at: now(), updated_at: now() })
+    .update({
+      phone: normalizedPhone,
+      role: finalRole,
+      last_login_at: now(),
+      updated_at: now(),
+    })
     .eq('id', existingUser.id)
     .select()
     .single());
@@ -841,10 +886,10 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/register', asyncHandler(async (req, res) => {
-  const normalizedPhone = onlyDigits(req.body.phone);
+  const normalizedPhone = normalizePhone(req.body.phone);
   const name = String(req.body.name || '').trim();
 
-  if (normalizedPhone.length < 10) {
+  if (!isValidPhone(normalizedPhone)) {
     return res.status(400).json({ message: 'Informe um WhatsApp valido' });
   }
   if (name.length < 2) {
@@ -855,7 +900,12 @@ app.post('/api/register', asyncHandler(async (req, res) => {
   if (existingUser) {
     const updatedUser = await runQuery(db()
       .from('app_users')
-      .update({ name, last_login_at: now(), updated_at: now() })
+      .update({
+        name,
+        phone: normalizedPhone,
+        last_login_at: now(),
+        updated_at: now(),
+      })
       .eq('id', existingUser.id)
       .select()
       .single());
@@ -1299,7 +1349,9 @@ app.get('/api/appointments', authenticate, asyncHandler(async (req, res) => {
     .order('time', { ascending: true });
 
   if (!isAdminRole(req.user.role)) {
-    query = query.or(`user_id.eq.${req.user.id},client_phone.eq.${req.user.phone}`);
+    const phoneFilters = phoneLookupVariants(req.user.phone)
+      .map((phone) => `client_phone.eq.${phone}`);
+    query = query.or([`user_id.eq.${req.user.id}`, ...phoneFilters].join(','));
   }
   if (status) query = query.eq('status', status);
   if (date) query = query.eq('date', date);
@@ -1575,9 +1627,9 @@ app.delete('/api/promotions/:id', authenticate, requireAdmin, asyncHandler(async
 
 app.post('/api/promotion-leads', asyncHandler(async (req, res) => {
   const clientName = req.body.clientName || req.body.name || req.body.nome;
-  const clientPhone = onlyDigits(req.body.clientPhone || req.body.phone || req.body.whatsapp);
+  const clientPhone = normalizePhone(req.body.clientPhone || req.body.phone || req.body.whatsapp);
 
-  if (!clientName || clientPhone.length < 10) {
+  if (!clientName || !isValidPhone(clientPhone)) {
     return res.status(400).json({ message: 'Nome e WhatsApp sao obrigatorios' });
   }
 
