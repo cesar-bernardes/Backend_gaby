@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+// ASDAS
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
@@ -14,10 +15,16 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_SCHEMA = process.env.SUPABASE_SCHEMA || 'Studio';
 
-const allowedOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:3000,http://localhost:5173')
+const defaultClientUrls = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://naildesigner-gaby.vercel.app',
+];
+const configuredClientUrls = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/$/, ''))
   .filter(Boolean);
+const allowedOrigins = new Set([...defaultClientUrls, ...configuredClientUrls]);
 
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -28,15 +35,21 @@ const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   })
   : null;
 
-app.use(express.json({ limit: '1mb' }));
-app.use(cookieParser());
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    const normalizedOrigin = origin?.replace(/\/$/, '');
+    if (!normalizedOrigin || allowedOrigins.has(normalizedOrigin)) return callback(null, true);
     return callback(new Error(`Origem nao permitida pelo CORS: ${origin}`));
   },
   credentials: true,
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 const now = () => new Date().toISOString();
 const makeId = (prefix) => `${prefix}_${randomUUID()}`;
@@ -464,6 +477,12 @@ const ensureSeedData = async () => {
   }
 };
 
+let bootPromise = null;
+const ensureBackendReady = () => {
+  if (!bootPromise) bootPromise = ensureSeedData();
+  return bootPromise;
+};
+
 const getStudio = async () => {
   const row = await runQuery(db()
     .from('studio_settings')
@@ -726,6 +745,19 @@ const sendAuthResponse = (res, user) => {
 
   return res.json({ success: true, user: publicUser(user) });
 };
+
+app.use(asyncHandler(async (_req, _res, next) => {
+  await ensureBackendReady();
+  next();
+}));
+
+app.get('/', (_req, res) => {
+  res.json({
+    ok: true,
+    name: 'JADE Backend',
+    health: '/api/health',
+  });
+});
 
 app.get('/api/health', asyncHandler(async (_req, res) => {
   assertSupabase();
@@ -1730,7 +1762,7 @@ app.use((error, _req, res, _next) => {
 });
 
 const start = async () => {
-  await ensureSeedData();
+  await ensureBackendReady();
 
   app.listen(PORT, () => {
     console.log(`Backend rodando na porta ${PORT}`);
@@ -1738,8 +1770,12 @@ const start = async () => {
   });
 };
 
-start().catch((error) => {
-  console.error('Nao foi possivel iniciar o backend:', error.message);
-  if (error.cause) console.error(error.cause);
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch((error) => {
+    console.error('Nao foi possivel iniciar o backend:', error.message);
+    if (error.cause) console.error(error.cause);
+    process.exit(1);
+  });
+}
+
+module.exports = app;
