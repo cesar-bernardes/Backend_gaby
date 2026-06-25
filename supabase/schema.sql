@@ -53,6 +53,8 @@ create table if not exists "Studio".services (
   name text not null,
   description text not null default '',
   image_url text not null default '',
+  benefits jsonb not null default '[]'::jsonb,
+  notes text not null default '',
   price_cents integer not null check (price_cents >= 0),
   duration_minutes integer not null check (duration_minutes > 0),
   category text not null default 'moment',
@@ -115,6 +117,8 @@ create table if not exists "Studio".appointments (
 alter table "Studio".services add column if not exists description text not null default '';
 alter table "Studio".services add column if not exists category text not null default 'moment';
 alter table "Studio".services add column if not exists image_url text not null default '';
+alter table "Studio".services add column if not exists benefits jsonb not null default '[]'::jsonb;
+alter table "Studio".services add column if not exists notes text not null default '';
 
 update "Studio".studio_settings
 set policy = jsonb_build_object(
@@ -129,7 +133,6 @@ alter table "Studio".availability_dates add column if not exists start_time text
 alter table "Studio".availability_dates add column if not exists end_time text not null default '17:00';
 alter table "Studio".availability_dates add column if not exists active boolean not null default true;
 alter table "Studio".availability_dates add column if not exists slots jsonb not null default '[]'::jsonb;
-
 alter table "Studio".availability_blocks add column if not exists full_day boolean not null default false;
 alter table "Studio".availability_blocks add column if not exists recurrence text not null default 'NONE';
 alter table "Studio".availability_blocks add column if not exists weekday integer;
@@ -235,6 +238,7 @@ create table if not exists "Studio".feed_posts (
   id text primary key,
   title text not null,
   subtitle text not null default '',
+  image_url text not null default '',
   content jsonb not null default '[]'::jsonb,
   footer text not null default '',
   sort_order integer not null default 0,
@@ -242,6 +246,8 @@ create table if not exists "Studio".feed_posts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table "Studio".feed_posts add column if not exists image_url text not null default '';
 
 -- Grupos de promocoes.
 create table if not exists "Studio".promotions (

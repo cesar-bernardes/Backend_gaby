@@ -156,6 +156,16 @@ const toCents = (value) => {
   return Number.isFinite(number) ? Math.round(number * 100) : null;
 };
 const normalizeImageUrl = (value = '') => String(value || '').trim();
+const normalizeTextArray = (value) => {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(/\r?\n|;/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
 
 const formatPrice = (cents = 0) => (Number(cents || 0) / 100).toFixed(2);
 
@@ -217,6 +227,10 @@ const mapService = (row) => row && ({
   descricao: row.description || '',
   imageUrl: row.image_url || '',
   foto: row.image_url || '',
+  benefits: row.benefits || [],
+  beneficios: row.benefits || [],
+  notes: row.notes || '',
+  observacoes: row.notes || '',
   priceCents: row.price_cents,
   preco: Number(row.price_cents || 0) / 100,
   durationMinutes: row.duration_minutes,
@@ -252,6 +266,8 @@ const mapFeedPost = (row) => row && ({
   id: row.id,
   title: row.title,
   subtitle: row.subtitle || '',
+  imageUrl: row.image_url || '',
+  foto: row.image_url || '',
   content: row.content || [],
   footer: row.footer || '',
   sortOrder: row.sort_order,
@@ -982,6 +998,8 @@ app.post('/api/services', authenticate, requireAdmin, asyncHandler(async (req, r
   const description = req.body.description || req.body.descricao || '';
   const category = req.body.category || req.body.categoria || 'moment';
   const imageUrl = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  const benefits = normalizeTextArray(req.body.benefits ?? req.body.beneficios);
+  const notes = req.body.notes ?? req.body.observacoes ?? '';
   const priceCents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
   const durationMinutes = Number(req.body.durationMinutes || req.body.duracaoMinutos);
 
@@ -998,6 +1016,8 @@ app.post('/api/services', authenticate, requireAdmin, asyncHandler(async (req, r
       description,
       category,
       image_url: imageUrl,
+      benefits,
+      notes,
       price_cents: priceCents,
       duration_minutes: durationMinutes,
       sort_order: req.body.sortOrder ?? services.length + 1,
@@ -1021,6 +1041,12 @@ app.put('/api/services/:id', authenticate, requireAdmin, asyncHandler(async (req
   }
   if (req.body.imageUrl !== undefined || req.body.image_url !== undefined || req.body.foto !== undefined) {
     patch.image_url = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  }
+  if (req.body.benefits !== undefined || req.body.beneficios !== undefined) {
+    patch.benefits = normalizeTextArray(req.body.benefits ?? req.body.beneficios);
+  }
+  if (req.body.notes !== undefined || req.body.observacoes !== undefined) {
+    patch.notes = req.body.notes ?? req.body.observacoes;
   }
   if (req.body.priceCents !== undefined || req.body.price !== undefined || req.body.preco !== undefined) {
     patch.price_cents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
@@ -1085,6 +1111,8 @@ app.post('/api/admin/services', authenticate, requireAdmin, asyncHandler(async (
   const description = req.body.description || req.body.descricao || '';
   const category = req.body.category || req.body.categoria || 'moment';
   const imageUrl = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  const benefits = normalizeTextArray(req.body.benefits ?? req.body.beneficios);
+  const notes = req.body.notes ?? req.body.observacoes ?? '';
   const priceCents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
   const durationMinutes = Number(req.body.durationMinutes || req.body.duracaoMinutos);
 
@@ -1101,6 +1129,8 @@ app.post('/api/admin/services', authenticate, requireAdmin, asyncHandler(async (
       description,
       category,
       image_url: imageUrl,
+      benefits,
+      notes,
       price_cents: priceCents,
       duration_minutes: durationMinutes,
       sort_order: req.body.sortOrder ?? services.length + 1,
@@ -1120,6 +1150,12 @@ app.put('/api/admin/services/:id', authenticate, requireAdmin, asyncHandler(asyn
   if (req.body.category !== undefined || req.body.categoria !== undefined) patch.category = req.body.category ?? req.body.categoria;
   if (req.body.imageUrl !== undefined || req.body.image_url !== undefined || req.body.foto !== undefined) {
     patch.image_url = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  }
+  if (req.body.benefits !== undefined || req.body.beneficios !== undefined) {
+    patch.benefits = normalizeTextArray(req.body.benefits ?? req.body.beneficios);
+  }
+  if (req.body.notes !== undefined || req.body.observacoes !== undefined) {
+    patch.notes = req.body.notes ?? req.body.observacoes;
   }
   if (req.body.priceCents !== undefined || req.body.price !== undefined || req.body.preco !== undefined) {
     patch.price_cents = req.body.priceCents ?? toCents(req.body.price ?? req.body.preco);
@@ -1697,6 +1733,16 @@ app.get('/api/feed/posts', asyncHandler(async (_req, res) => {
   res.json(rows.map(mapFeedPost));
 }));
 
+app.get('/api/admin/feed/posts', authenticate, requireAdmin, asyncHandler(async (_req, res) => {
+  const rows = await runQuery(db()
+    .from('feed_posts')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true }));
+
+  res.json(rows.map(mapFeedPost));
+}));
+
 app.post('/api/feed/posts', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   if (!req.body.title || !Array.isArray(req.body.content)) {
     return res.status(400).json({ message: 'Titulo e conteudo sao obrigatorios' });
@@ -1709,6 +1755,7 @@ app.post('/api/feed/posts', authenticate, requireAdmin, asyncHandler(async (req,
       id: makeId('post'),
       title: req.body.title,
       subtitle: req.body.subtitle || '',
+      image_url: normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto),
       content: req.body.content,
       footer: req.body.footer || '',
       sort_order: req.body.sortOrder ?? posts.length + 1,
@@ -1724,6 +1771,9 @@ app.put('/api/feed/posts/:id', authenticate, requireAdmin, asyncHandler(async (r
   const patch = { updated_at: now() };
   if (req.body.title !== undefined) patch.title = req.body.title;
   if (req.body.subtitle !== undefined) patch.subtitle = req.body.subtitle;
+  if (req.body.imageUrl !== undefined || req.body.image_url !== undefined || req.body.foto !== undefined) {
+    patch.image_url = normalizeImageUrl(req.body.imageUrl ?? req.body.image_url ?? req.body.foto);
+  }
   if (req.body.content !== undefined) patch.content = req.body.content;
   if (req.body.footer !== undefined) patch.footer = req.body.footer;
   if (req.body.sortOrder !== undefined) patch.sort_order = Number(req.body.sortOrder);

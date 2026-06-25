@@ -16,6 +16,22 @@ $$;
 alter table "Studio".services add column if not exists description text not null default '';
 alter table "Studio".services add column if not exists category text not null default 'moment';
 alter table "Studio".services add column if not exists image_url text not null default '';
+alter table "Studio".services add column if not exists benefits jsonb not null default '[]'::jsonb;
+alter table "Studio".services add column if not exists notes text not null default '';
+
+create table if not exists "Studio".feed_posts (
+  id text primary key,
+  title text not null,
+  subtitle text not null default '',
+  content jsonb not null default '[]'::jsonb,
+  footer text not null default '',
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table "Studio".feed_posts add column if not exists image_url text not null default '';
 
 update "Studio".studio_settings
 set policy = jsonb_build_object(
